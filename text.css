@@ -1,9 +1,9 @@
 body {
   margin: 15px;
   padding: 20px;
-  background-color: red;
+  background-color: blue;
 }
 
 div {
-  margin: 0;
+  margin: 10px;
 }
