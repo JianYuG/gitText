@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>casecade</title>
+
+    <script src="./public/ol.js"></script>
+    <link rel="stylesheet" href="./public/ol.css">
+    <script src="./public/vue.js"></script>
+
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <!-- 引入组件库 -->
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        const vm = new Vue({
+            el: '#app',
+            template: `<div>
+                <button @click="getXzqhList">点击</button>
+                    <div class="block">
+                        <el-cascader
+                            v-model="value"
+                            size="small"
+                            :show-all-levels="false"
+                            :options="data"
+                            :props="{ checkStrictly: true }"
+                            :clearable="false"
+                            @change="change">
+                            </el-cascader>
+                    </div>
+                    <div id="map"></div>
+                </div>`,
+                data() {
+                    return {
+                        options: [{
+                            value: 'zhinan',
+                            label: '指南',
+                            children: [{
+                                value: 'shejiyuanze',
+                                label: '设计原则',
+                                children: [{
+                                    value: 'yizhi',
+                                    label: '一致'
+                                },{
+                                    value: 'fankui',
+                                    label: '反馈'
+                                },{
+                                    value: 'xiaolv',
+                                    label: '效率'
+                                }]
+                            },{
+                                value: 'danghang',
+                                label: '导航',
+                                children: [{
+                                    value: 'cexiangfaohang',
+                                    label: '侧向导航'
+                                },{
+                                    value: 'dingbudanghang',
+                                    label: '顶部导航'
+                                }]
+                            }]
+                        },{
+                            value: 'zujian',
+                            label: '组件',
+                            children: [{
+                                value: 'basic',
+                                label: 'Basic',
+                                children: [{
+                                    value: 'layout',
+                                    label: '布局'
+                                },{
+                                    value: 'color',
+                                    label: '色彩'
+                                }]
+                            }]
+                        }],
+                        value: '33',
+                        data: [],
+                        nodeList: [],
+                        nodeDict: {},
+                        map: null
+                    } 
+                },
+                methods: {
+                    change() {
+                        // console.log(this.value,'value');
+                        const code = this.value[this.value.length - 1];
+                        const node = this.nodeDict[code];
+                        // console.log(node);
+                        const extent = node.extent;
+                        this.map.getView().fit(extent);
+                    },
+                    async getXzqhList() {
+                        const xzqhList = await fetch('request/xzqh-trees.json', {
+                            method: 'GET'
+                        }).then((res) => {
+                            if (res.ok) {
+                                return res.json();
+                            } else {
+                                throw res
+                            }
+                        }).then((json) => {
+                            return Promise.resolve(json);
+                        }).catch(error => {
+                            console.error('获取行政区划错误', error);
+                            return Promise.resolve(null);
+                        })
+                        if (!xzqhList) {
+                            return null;
+                        }
+                        for (let i = 0, length = xzqhList.length; i < length; i++) {
+                            const xzqh = xzqhList[i];
+                            xzqh['label'] = xzqh.name;
+                            xzqh['value'] = xzqh.code;
+                            if (xzqh.level === 5) {
+                                xzqh['disabled'] = true;
+                            }
+                        }
+                        console.log(xzqhList,11111);   // 输出数组(此处涉及到深拷贝与浅拷贝 调用输出与直接输出结果不同)
+                    return xzqhList;
+                    },
+                    async reload() {
+                        const t0 = (new Date()).getTime();
+
+                        // 1 get nodes
+                        const nodelist = await this.getXzqhList();
+                       
+                        if (!nodelist) {
+                            console.error('行政管理树获取 datalist 失败');
+                            return null;
+                        }
+                        this.nodeList = nodelist;
+
+                        const t1 = (new Date()).getTime();
+
+                        // 2 init node dict
+                        const nodeDict = {};
+                        for (let i = 0, length = this.nodeList.length; i < length; i++) {
+                            const node = this.nodeList[i];
+                            // console.log(node,'node');
+                            if (node.level < 5) {  // 村级不入字典
+                                nodeDict[node['code']] = node;
+                            }
+                        }
+                        this.nodeDict = nodeDict;
+                        console.log(this.nodeDict, 22222);    // 输出对象（注意深拷贝与浅拷贝）
+                        // 3 fill node with children
+                        let rootNode = null;
+                        const orphans = [];
+                        for (let i = 0, length = this.nodeList.length; i < length; i++) {
+                            const node = this.nodeList[i];
+                            const parentCode = node['parent_code'];
+                            if (!parentCode) {  // 无上级结点，如省结点
+                                if (node.level === 1) {
+                                    rootNode = node;
+                                } else {
+                                    console.error('发现异常结点', node);
+                                }
+                                continue;
+                            }
+                            const parentNode = this.nodeDict[parentCode];
+                            if (!parentNode) {
+                                // console.error('找不到该结点 parentCode 对应结点', node);
+                                orphans.push(node);
+                                continue;
+                            }
+                            const parentNodeChildren = parentNode['children'];
+                            if (!parentNodeChildren) {
+                                parentNode['children'] = [node];
+                            } else {
+                                parentNode['children'].push(node);
+                            }
+                        }
+                        if (orphans.length > 0) {
+                            // console.warn('行政管理孤儿结点', orphans);
+                        }
+                        if (!rootNode) {
+                            console.error('未找到根结点');
+                            return null;
+                        }
+                        // 5 children sort by sibling order
+                        for (let i = 0, length = this.nodeList.length; i < length; i++) {
+                            const children = this.nodeList[i]['children'];
+                            if (children) {
+                                children.sort((a, b) => { return a['code'] - b['code'] });
+                            }
+                        }
+
+                        // 6 done
+                        const data = [rootNode]
+                        const t2 = (new Date()).getTime();
+                        console.warn('加载总时间：',t2 - t1);
+                        return data
+                    }
+                },
+                async mounted() {
+                    this.data = await this.reload();
+                    this.map = new ol.Map({
+                        layers: [new ol.layer.Tile({
+                            source: new ol.source.OSM()
+                        })],
+                        view: new ol.View({
+                            center: [120,29],
+                            projection: 'EPSG:4326',
+                            zoom: 12
+                        }),
+                        target: 'map'
+                    })
+                }         
+        })
+    </script>
+</body>
+</html>
